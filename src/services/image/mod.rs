@@ -8,6 +8,7 @@ pub fn process_image(buffer: &Vec<u8>) -> Result<Vec<u8>> {
     let options = ops::WebpsaveBufferOptions {
         q: 50,
         strip: true,
+        reduction_effort: 2,
         ..ops::WebpsaveBufferOptions::default()
     };
     webpsave_buffer_with_opts(&source, &options)
