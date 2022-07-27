@@ -18,7 +18,7 @@ fn index() -> &'static str {
 #[response(content_type = "image/webp")]
 struct ImageResponse(Vec<u8>);
 
-#[get("/library/<file..>")]
+#[get("/test/<file..>")]
 async fn optimize(file: PathBuf) -> Option<ImageResponse> {
     let path: PathBuf =
         Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/test/")).join(file);
