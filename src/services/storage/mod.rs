@@ -1,4 +1,4 @@
-use crate::drivers::S3;
+use crate::drivers::S3::{self, UploadData};
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::Client;
 use std::env;
@@ -21,7 +21,7 @@ impl Storage {
         }
     }
 
-    pub async fn write(&self, key: &str, value: &'static Vec<u8>) -> Result<()> {
+    pub async fn write(&self, key: &str, value: &UploadData<'static>) -> Result<()> {
         let result = S3::upload_object(&self._client, &self._dest, &key, &value).await;
         match result {
             Ok(()) => Ok(()),

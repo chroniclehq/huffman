@@ -2,22 +2,24 @@
 extern crate rocket;
 extern crate dotenv;
 
+mod drivers;
+mod services;
+mod utils;
+
 use dotenv::dotenv;
 use rocket::http::Status;
 use rocket::tokio::fs::File;
 use rocket::tokio::io::AsyncReadExt;
+use rocket::State;
+use services::storage::Storage;
 use std::env;
 use std::fs;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-mod drivers;
-mod services;
-mod utils;
-
 #[get("/ping")]
-fn index() -> &'static str {
+fn ping() -> &'static str {
     println!("Received ping");
     "pong!"
 }
@@ -25,6 +27,36 @@ fn index() -> &'static str {
 #[derive(Responder)]
 #[response(content_type = "image/webp")]
 struct ImageResponse(Vec<u8>);
+
+#[get("/<file..>")]
+async fn index(storage: &State<Storage>, file: PathBuf) -> Option<ImageResponse> {
+    let time = Instant::now();
+    let path = file.as_os_str().to_str()?;
+    let res = storage.read(path).await;
+
+    match res {
+        Ok(image) => {
+            println!("Fetched at {:.2?}", time.elapsed());
+            let result: Result<Vec<u8>, libvips::error::Error> =
+                services::image::process_image(&image);
+
+            match result {
+                Ok(optimised_image) => {
+                    println!("Optimized at {:.2?}", time.elapsed());
+                    Some(ImageResponse(optimised_image))
+                }
+                Err(error) => {
+                    println!("Error during optimization{}", error);
+                    Some(ImageResponse(image))
+                }
+            }
+        }
+        Err(error) => {
+            println!("{}", error);
+            None
+        }
+    }
+}
 
 #[get("/test/<file..>")]
 async fn test(file: PathBuf) -> Option<ImageResponse> {
@@ -48,10 +80,7 @@ async fn test(file: PathBuf) -> Option<ImageResponse> {
             println!("Optimized in {:.2?}", time.elapsed());
 
             match result {
-                Ok(optimised_image) => {
-                    println!("Optimised");
-                    Some(ImageResponse(optimised_image))
-                }
+                Ok(optimised_image) => Some(ImageResponse(optimised_image)),
                 Err(error) => {
                     println!("{}", error);
                     Some(ImageResponse(original_image))
@@ -65,7 +94,7 @@ async fn test(file: PathBuf) -> Option<ImageResponse> {
     }
 }
 
-#[get("/library/<file..>")]
+#[get("/generate/library/<file..>")]
 async fn generate(file: PathBuf) -> Status {
     let path: PathBuf =
         Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/test/")).join(&file);
@@ -116,7 +145,7 @@ async fn generate(file: PathBuf) -> Status {
     }
 }
 
-#[get("/library/<file..>")]
+#[get("/fetch/library/<file..>")]
 async fn fetch(file: PathBuf) -> Option<ImageResponse> {
     let (file_name_without_ext, _) = file.to_str().unwrap().split_once('.').unwrap();
     let optimised_image_location = format!(
@@ -198,12 +227,20 @@ async fn fetch(file: PathBuf) -> Option<ImageResponse> {
 }
 
 #[launch]
-fn rocket() -> _ {
+async fn rocket() -> _ {
+    // Initialize env variables
     dotenv().ok();
+
+    // Initialize storage service
+    let storage: Storage = services::storage::initialize().await.unwrap();
+
+    // Start server
     rocket::build()
         .attach(utils::CORS)
-        .mount("/", routes![index])
+        .mount("/", routes![ping])
         .mount("/", routes![test])
-        .mount("/generate", routes![generate])
-        .mount("/fetch", routes![fetch])
+        .mount("/", routes![index])
+        .mount("/", routes![generate])
+        .mount("/", routes![fetch])
+        .manage(storage)
 }

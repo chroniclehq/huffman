@@ -4,6 +4,7 @@ use aws_sdk_s3::{
     types::ByteStream,
     Client,
 };
+use rocket::http::ContentType;
 
 pub async fn create_client() -> Client {
     let region_provider = RegionProviderChain::default_provider().or_else("ap-south-1");
@@ -28,19 +29,25 @@ pub async fn fetch_object(
     Ok(data.into_bytes().to_vec())
 }
 
+pub struct UploadData<'a> {
+    body: &'a Vec<u8>,
+    content_type: ContentType,
+}
+
 pub async fn upload_object(
     client: &Client,
     bucket_name: &str,
     key: &str,
-    data: &'static Vec<u8>,
+    data: &UploadData<'static>,
 ) -> Result<(), PutObjectError> {
-    let body = ByteStream::from_static(data);
+    let body = ByteStream::from_static(data.body);
 
     client
         .put_object()
         .bucket(bucket_name)
         .key(key)
         .body(body)
+        .content_type(data.content_type.to_string())
         .send()
         .await
         .unwrap();
