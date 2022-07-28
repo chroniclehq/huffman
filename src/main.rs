@@ -15,6 +15,7 @@ use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+mod drivers;
 mod services;
 
 pub struct CORS;
