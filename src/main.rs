@@ -1,11 +1,14 @@
 #[macro_use]
 extern crate rocket;
+extern crate dotenv;
 
+use dotenv::dotenv;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::tokio::fs::File;
 use rocket::tokio::io::AsyncReadExt;
 use rocket::{Request, Response};
+use std::env;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -33,6 +36,8 @@ impl Fairing for CORS {
 
 #[get("/")]
 fn index() -> &'static str {
+    let value = env::var("AWS_CACHE_BUCKET").ok();
+    println!("{:?}", value);
     "Hello, world!"
 }
 
@@ -41,7 +46,7 @@ fn index() -> &'static str {
 struct ImageResponse(Vec<u8>);
 
 #[get("/test/<file..>")]
-async fn optimize(file: PathBuf) -> Option<ImageResponse> {
+async fn test(file: PathBuf) -> Option<ImageResponse> {
     let path: PathBuf =
         Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/test/")).join(file);
 
@@ -81,8 +86,9 @@ async fn optimize(file: PathBuf) -> Option<ImageResponse> {
 
 #[launch]
 fn rocket() -> _ {
+    dotenv().ok();
     rocket::build()
         .attach(CORS)
         .mount("/", routes![index])
-        .mount("/", routes![optimize])
+        .mount("/", routes![test])
 }
