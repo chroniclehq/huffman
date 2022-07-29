@@ -7,11 +7,12 @@ mod services;
 mod utils;
 
 use dotenv::dotenv;
+use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::tokio::fs::File;
 use rocket::tokio::io::AsyncReadExt;
 use rocket::State;
-use services::storage::Storage;
+use services::storage::{Storage, UploadData};
 use std::env;
 use std::fs;
 use std::io::Error;
@@ -43,6 +44,24 @@ async fn index(storage: &State<Storage>, file: PathBuf) -> Option<ImageResponse>
             match result {
                 Ok(optimised_image) => {
                     println!("Optimized at {:.2?}", time.elapsed());
+
+                    let res = storage
+                        .write(
+                            path,
+                            UploadData {
+                                content_type: ContentType::WEBP,
+                                body: optimised_image.clone(),
+                            },
+                        )
+                        .await;
+                    match res {
+                        Ok(_) => println!("Stored optimized image for {} into cache bucket", path),
+                        Err(_) => println!(
+                            "Could not store optimized image for {} into cache bucket",
+                            path
+                        ),
+                    }
+
                     Some(ImageResponse(optimised_image))
                 }
                 Err(error) => {

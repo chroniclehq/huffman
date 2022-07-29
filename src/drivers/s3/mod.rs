@@ -29,24 +29,24 @@ pub async fn fetch_object(
     Ok(data.into_bytes().to_vec())
 }
 
-pub struct UploadData<'a> {
-    body: &'a Vec<u8>,
-    content_type: ContentType,
+pub struct UploadData {
+    pub body: Vec<u8>,
+    pub content_type: ContentType,
 }
 
-pub async fn upload_object(
+pub async fn upload_object<'a>(
     client: &Client,
     bucket_name: &str,
     key: &str,
-    data: &UploadData<'static>,
+    data: UploadData,
 ) -> Result<(), PutObjectError> {
-    let body = ByteStream::from_static(data.body);
+    let stream = ByteStream::from(data.body.clone());
 
     client
         .put_object()
         .bucket(bucket_name)
         .key(key)
-        .body(body)
+        .body(stream)
         .content_type(data.content_type.to_string())
         .send()
         .await
