@@ -1,4 +1,5 @@
 {
+  "editor.rulers": [80, 150],
   "rust-analyzer.checkOnSave.allTargets": false,
   "rust-analyzer.checkOnSave.extraArgs": ["--target-dir", "./target/check"]
 }
