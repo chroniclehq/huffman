@@ -13,6 +13,7 @@ pub struct Storage {
 impl Storage {
     pub async fn read(&self, key: &str) -> Result<Vec<u8>> {
         let result = S3::fetch_object(&self._client, &self._source, &key).await;
+
         match result {
             Ok(data) => Ok(data),
             Err(error) => {
@@ -29,6 +30,18 @@ impl Storage {
             Err(error) => {
                 println!("{:?}", error);
                 Err(anyhow!("Could not write object"))
+            }
+        }
+    }
+
+    pub async fn read_from_cache(&self, key: &str) -> Result<Vec<u8>> {
+        let result = S3::fetch_object(&self._client, &self._dest, &key).await;
+
+        match result {
+            Ok(data) => Ok(data),
+            Err(error) => {
+                println!("{:?}", error);
+                Err(anyhow!("Could not read object"))
             }
         }
     }

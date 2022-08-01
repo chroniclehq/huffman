@@ -1,7 +1,7 @@
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{
     error::{GetObjectError, PutObjectError},
-    types::ByteStream,
+    types::{ByteStream,SdkError},
     Client,
 };
 use rocket::http::ContentType;
@@ -16,14 +16,13 @@ pub async fn fetch_object(
     client: &Client,
     bucket_name: &str,
     key: &str,
-) -> Result<Vec<u8>, GetObjectError> {
+) -> Result<Vec<u8>, SdkError<GetObjectError>> {
     let resp = client
         .get_object()
         .bucket(bucket_name)
         .key(key)
         .send()
-        .await
-        .unwrap();
+        .await?;
 
     let data = resp.body.collect().await.unwrap();
     Ok(data.into_bytes().to_vec())
