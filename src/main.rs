@@ -7,8 +7,10 @@ mod services;
 mod utils;
 
 use dotenv::dotenv;
+use rocket::fairing::AdHoc;
 use rocket::http::ContentType;
 use rocket::http::Status;
+use rocket::tokio::task;
 use rocket::State;
 use services::storage::{Storage, UploadData};
 use std::path::PathBuf;
@@ -179,6 +181,11 @@ async fn rocket() -> _ {
     // Start server
     rocket::build()
         .attach(utils::CORS)
+        .attach(AdHoc::on_liftoff("start_consumer", |rocket| {
+            Box::pin(async move {
+                task::spawn(services::events::start_consumer(rocket.shutdown()));
+            })
+        }))
         .mount("/", routes![ping])
         .mount("/", routes![index])
         .mount("/", routes![generate])
