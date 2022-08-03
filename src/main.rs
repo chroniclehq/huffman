@@ -12,6 +12,8 @@ use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::tokio::task;
 use rocket::State;
+use services::events::start_consumer;
+use services::events::Events;
 use services::storage::{Storage, UploadData};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -175,20 +177,30 @@ async fn rocket() -> _ {
     // Initialize env variables
     dotenv().ok();
 
-    // Initialize storage service
+    // Initialize services
     let storage: Storage = services::storage::initialize().await.unwrap();
+    let eventbus: Events = services::events::initialize().await.unwrap();
 
     // Start server
     rocket::build()
+        .manage(storage)
         .attach(utils::CORS)
         .attach(AdHoc::on_liftoff("start_consumer", |rocket| {
-            Box::pin(async move {
-                task::spawn(services::events::start_consumer(rocket.shutdown()));
+            Box::pin(async {
+                let consumer_task = start_consumer(
+                    eventbus,
+                    |payload| {
+                        println!("Received for processing: {}", payload);
+                        Ok(())
+                    },
+                    rocket.shutdown(),
+                );
+
+                task::spawn(consumer_task);
             })
         }))
         .mount("/", routes![ping])
         .mount("/", routes![index])
         .mount("/", routes![generate])
         .mount("/", routes![fetch])
-        .manage(storage)
 }
