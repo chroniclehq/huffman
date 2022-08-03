@@ -8,13 +8,11 @@ mod utils;
 
 use dotenv::dotenv;
 use rocket::fairing::AdHoc;
-use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::tokio::task;
 use rocket::State;
-use services::events::start_consumer;
-use services::events::Events;
-use services::storage::{Storage, UploadData};
+use services::events::{consume_events, EventChannel};
+use services::storage::Storage;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -29,48 +27,61 @@ fn ping() -> &'static str {
 struct ImageResponse(Vec<u8>);
 
 #[get("/<file..>")]
-async fn index(storage: &State<Storage>, file: PathBuf) -> Option<ImageResponse> {
+async fn fetch(
+    storage: &State<Storage>,
+    channel: &State<EventChannel>,
+    file: PathBuf,
+) -> Option<ImageResponse> {
+    let path = file.as_os_str().to_str();
     let time = Instant::now();
-    let path = file.as_os_str().to_str()?;
-    let res = storage.read(path).await;
 
-    match res {
-        Ok(image) => {
-            println!("Fetched at {:.2?}", time.elapsed());
-            let result: Result<Vec<u8>, libvips::error::Error> =
-                services::image::process_image(&image);
+    match path {
+        Some(key) => {
+            let file_name_without_ext = utils::get_path_without_ext(key);
+            let target_path = format!("default/{}.webp", file_name_without_ext);
+            let cached_image = storage.read_from_cache(&target_path).await;
 
-            match result {
-                Ok(optimised_image) => {
-                    println!("Optimized at {:.2?}", time.elapsed());
-
-                    let res = storage
-                        .write(
-                            path,
-                            UploadData {
-                                content_type: ContentType::WEBP,
-                                body: optimised_image.clone(),
-                            },
-                        )
-                        .await;
-                    match res {
-                        Ok(_) => println!("Stored optimized image for {} into cache bucket", path),
-                        Err(_) => println!(
-                            "Could not store optimized image for {} into cache bucket",
-                            path
-                        ),
-                    }
-
-                    Some(ImageResponse(optimised_image))
-                }
-                Err(error) => {
-                    println!("Error during optimization{}", error);
+            match cached_image {
+                Ok(image) => {
+                    println!(
+                        "Variant found for {} at {:2?}. Returning from cache",
+                        key,
+                        time.elapsed()
+                    );
                     Some(ImageResponse(image))
+                }
+                Err(_error) => {
+                    let original_image = storage.read(key).await;
+
+                    match original_image {
+                        Ok(original_image) => {
+                            let result: Result<Vec<u8>, libvips::error::Error> =
+                                services::image::optimize(&original_image);
+
+                            match result {
+                                Ok(optimised_image) => {
+                                    println!("Optimised {} at {:2?}", key, time.elapsed());
+
+                                    let _ = channel.send(key).await;
+
+                                    Some(ImageResponse(optimised_image))
+                                }
+                                Err(error) => {
+                                    println!("Error during optimization {}", error);
+                                    Some(ImageResponse(original_image))
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            println!("Could not find image {}", error);
+                            None
+                        }
+                    }
                 }
             }
         }
-        Err(error) => {
-            println!("{}", error);
+        None => {
+            println!("Missing path");
             None
         }
     }
@@ -78,97 +89,17 @@ async fn index(storage: &State<Storage>, file: PathBuf) -> Option<ImageResponse>
 
 #[get("/generate/<file..>")]
 async fn generate(storage: &State<Storage>, file: PathBuf) -> Status {
-    let path = file.as_os_str().to_str().unwrap();
-
-    let res = storage.read(path).await;
-
-    match res {
-        Ok(image) => {
-            let result: Result<Vec<u8>, libvips::error::Error> =
-                services::image::process_image(&image);
-
-            match result {
-                Ok(optimised_image) => {
-                    println!("Optimised");
-
-                    let (file_name_without_ext, _) =
-                        file.to_str().unwrap().split_once('.').unwrap();
-                    let dest_location = format!("{}.webp", file_name_without_ext);
-
-                    let _res = storage
-                        .write(
-                            &dest_location,
-                            UploadData {
-                                content_type: ContentType::WEBP,
-                                body: optimised_image.clone(),
-                            },
-                        )
-                        .await;
-                    Status::Ok
-                }
-                Err(error) => {
-                    println!("{}", error);
-                    Status::InternalServerError
-                }
+    let path = file.as_os_str().to_str();
+    match path {
+        // TODO @harris: Figure out a way to move this onto a blocking thread
+        Some(key) => match services::image::generate(key, &storage).await {
+            Ok(_) => Status::Ok,
+            Err(error) => {
+                println!("{}", error);
+                Status::InternalServerError
             }
-        }
-        Err(error) => {
-            println!("{}", error);
-            Status::InternalServerError
-        }
-    }
-}
-
-#[get("/fetch/<file..>")]
-async fn fetch(storage: &State<Storage>, file: PathBuf) -> Option<ImageResponse> {
-    let (file_name_without_ext, _) = file.to_str().unwrap().split_once('.').unwrap();
-    let dest_location = format!("{}.webp", file_name_without_ext);
-
-    println!("{:?}", dest_location);
-    let cached_image = storage.read_from_cache(&dest_location).await;
-
-    match cached_image {
-        Ok(image) => {
-            println!("file exists. Returning cached image");
-            Some(ImageResponse(image))
-        }
-        Err(_error) => {
-            println!("Error received when fetching the image");
-            let path = file.as_os_str().to_str().unwrap();
-            let original_image = storage.read(path).await;
-
-            match original_image {
-                Ok(original_image) => {
-                    let result: Result<Vec<u8>, libvips::error::Error> =
-                        services::image::process_image(&original_image);
-
-                    match result {
-                        Ok(optimised_image) => {
-                            println!("Optimised");
-
-                            let _res = storage
-                                .write(
-                                    &dest_location,
-                                    UploadData {
-                                        content_type: ContentType::WEBP,
-                                        body: optimised_image.clone(),
-                                    },
-                                )
-                                .await;
-                            Some(ImageResponse(optimised_image))
-                        }
-                        Err(error) => {
-                            println!("{}", error);
-                            Some(ImageResponse(original_image))
-                        }
-                    }
-                }
-                Err(error) => {
-                    println!("{}", error);
-                    None
-                }
-            }
-        }
+        },
+        None => Status::InternalServerError,
     }
 }
 
@@ -179,28 +110,19 @@ async fn rocket() -> _ {
 
     // Initialize services
     let storage: Storage = services::storage::initialize().await.unwrap();
-    let eventbus: Events = services::events::initialize().await.unwrap();
+    let channel: EventChannel = services::events::create_channel().await.unwrap();
 
     // Start server
     rocket::build()
         .manage(storage)
+        .manage(channel)
         .attach(utils::CORS)
         .attach(AdHoc::on_liftoff("start_consumer", |rocket| {
             Box::pin(async {
-                let consumer_task = start_consumer(
-                    eventbus,
-                    |payload| {
-                        println!("Received for processing: {}", payload);
-                        Ok(())
-                    },
-                    rocket.shutdown(),
-                );
-
-                task::spawn(consumer_task);
+                task::spawn(consume_events(rocket.shutdown()));
             })
         }))
         .mount("/", routes![ping])
-        .mount("/", routes![index])
-        .mount("/", routes![generate])
         .mount("/", routes![fetch])
+        .mount("/", routes![generate])
 }

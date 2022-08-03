@@ -23,6 +23,15 @@ impl Storage {
         }
     }
 
+    pub async fn read_from_cache(&self, key: &str) -> Result<Vec<u8>> {
+        let result = S3::fetch_object(&self._client, &self._dest, &key).await;
+
+        match result {
+            Ok(data) => Ok(data),
+            Err(_) => Err(anyhow!("Could not read object")),
+        }
+    }
+
     pub async fn write(&self, key: &str, value: UploadData) -> Result<()> {
         let result = S3::upload_object(&self._client, &self._dest, &key, value).await;
         match result {
@@ -30,18 +39,6 @@ impl Storage {
             Err(error) => {
                 println!("{:?}", error);
                 Err(anyhow!("Could not write object"))
-            }
-        }
-    }
-
-    pub async fn read_from_cache(&self, key: &str) -> Result<Vec<u8>> {
-        let result = S3::fetch_object(&self._client, &self._dest, &key).await;
-
-        match result {
-            Ok(data) => Ok(data),
-            Err(error) => {
-                println!("{:?}", error);
-                Err(anyhow!("Could not read object"))
             }
         }
     }

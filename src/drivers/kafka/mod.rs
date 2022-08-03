@@ -35,7 +35,7 @@ pub async fn create_producer() -> FutureProducer {
 pub fn extract_payload(message: OwnedMessage) -> Option<String> {
     match message.payload_view::<str>() {
         Some(Ok(payload)) => Some(payload.to_string()),
-        Some(Err(_)) => Some("".to_string()),
+        Some(Err(_)) => None,
         None => None,
     }
 }

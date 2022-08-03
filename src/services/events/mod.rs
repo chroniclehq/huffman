@@ -1,24 +1,26 @@
 use crate::drivers::kafka::{self, extract_payload};
+use crate::services;
+
 use anyhow::{anyhow, Result};
 use rdkafka::consumer::{Consumer, StreamConsumer};
+use rdkafka::error::KafkaError;
+use rdkafka::message::OwnedMessage;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use rocket::futures::TryStreamExt;
 use rocket::tokio::{select, task, time};
 use rocket::Shutdown;
 
-pub struct Events {
+pub struct EventChannel {
     _producer: FutureProducer,
-    _consumer: StreamConsumer,
 }
 
-impl Events {
-    // TODO: Move this into a fn compatible with rocket
-    #[allow(dead_code)]
-    pub async fn send(&self, key: &str, payload: &str) -> Result<()> {
+impl EventChannel {
+    pub async fn send(&self, message: &str) -> Result<()> {
         let topic = String::from("image-optimizer");
+        let key = "huffman";
 
-        let record = FutureRecord::to(&topic).key(key).payload(payload);
+        let record = FutureRecord::to(&topic).key(key).payload(message);
         let response = self
             ._producer
             .send(record, Timeout::After(time::Duration::from_secs(0)));
@@ -36,57 +38,56 @@ impl Events {
     }
 }
 
-pub async fn initialize() -> Result<Events> {
-    let consumer = kafka::create_consumer().await;
+pub async fn create_channel() -> Result<EventChannel> {
     let producer = kafka::create_producer().await;
 
-    Ok(Events {
-        _consumer: consumer,
+    Ok(EventChannel {
         _producer: producer,
     })
 }
 
-pub async fn start_consumer(
-    eventbus: Events,
-    process: fn(String) -> Result<()>,
-    mut shutdown: Shutdown,
-) {
-    let topic = String::from("image-optimizer");
+async fn process_event(owned_message: OwnedMessage) -> Result<(), KafkaError> {
+    match extract_payload(owned_message) {
+        Some(payload) => {
+            let task_result = task::spawn_blocking(|| async move {
+                println!("Received for processing: {}", payload);
+                let storage = services::storage::initialize().await.unwrap();
+                let result = services::image::generate(payload.as_str(), &storage).await;
 
-    eventbus
-        ._consumer
+                result
+            })
+            .await;
+
+            match task_result {
+                Ok(_) => {}
+                Err(_) => {}
+            };
+
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
+pub async fn consume_events(mut shutdown: Shutdown) {
+    let consumer: StreamConsumer = kafka::create_consumer().await;
+    let topic: String = String::from("image-optimizer");
+
+    consumer
         .subscribe(&[&topic])
         .expect("Could not subscribe to topic: {:topic}");
 
-    let stream = eventbus
-        ._consumer
+    let stream = consumer
         .stream()
-        .try_for_each(|borrowed_message| {
-            let owned_message = borrowed_message.detach();
-
-            async move {
-                let _: Result<()> = match extract_payload(owned_message) {
-                    Some(payload) => {
-                        let _ = task::spawn_blocking(move || {
-                            let _ = process(payload);
-                        })
-                        .await;
-
-                        Ok(())
-                    }
-                    None => Ok(()),
-                };
-                Ok(())
-            }
-        });
+        .try_for_each(|borrowed_message| process_event(borrowed_message.detach()));
 
     println!("Listening to events for topic :{}", topic);
 
     select! {
         _ = stream =>
-            println!("Stream shutdown"),
+            println!("Stream Failed"),
         _ = &mut shutdown => {
-            println!("Shutting down listener");
+            println!("Consumer shutdown");
         },
     }
 }

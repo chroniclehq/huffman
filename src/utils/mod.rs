@@ -20,3 +20,10 @@ impl Fairing for CORS {
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
 }
+
+pub fn get_path_without_ext(path: &str) -> &str {
+    match path.rsplit_once('.') {
+        Some((new_path, _)) => new_path,
+        None => path,
+    }
+}
