@@ -11,7 +11,7 @@ use rocket::fairing::AdHoc;
 use rocket::http::Status;
 use rocket::tokio::task;
 use rocket::State;
-use services::events::{consume_events, EventChannel};
+use services::events::EventChannel;
 use services::storage::Storage;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -62,7 +62,14 @@ async fn fetch(
                                 Ok(optimised_image) => {
                                     println!("Optimised {} at {:2?}", key, time.elapsed());
 
-                                    let _ = channel.send(key).await;
+                                    let resp = channel.send_message(key).await;
+                                    if let Ok(_) = resp {
+                                        println!(
+                                            "Queued {} for caching at {:2?}",
+                                            key,
+                                            time.elapsed()
+                                        );
+                                    }
 
                                     Some(ImageResponse(optimised_image))
                                 }
@@ -110,7 +117,7 @@ async fn rocket() -> _ {
 
     // Initialize services
     let storage: Storage = services::storage::initialize().await.unwrap();
-    let channel: EventChannel = services::events::create_channel().await.unwrap();
+    let channel: EventChannel = services::events::initialize().await.unwrap();
 
     // Start server
     rocket::build()
@@ -119,7 +126,12 @@ async fn rocket() -> _ {
         .attach(utils::CORS)
         .attach(AdHoc::on_liftoff("start_consumer", |rocket| {
             Box::pin(async {
-                task::spawn(consume_events(rocket.shutdown()));
+                let shutdown = rocket.shutdown();
+                task::spawn(async {
+                    let channel: EventChannel = services::events::initialize().await.unwrap();
+                    let _ = channel.listen(shutdown).await;
+                    ()
+                });
             })
         }))
         .mount("/", routes![ping])

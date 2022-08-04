@@ -1,93 +1,81 @@
-use crate::drivers::kafka::{self, extract_payload};
+use crate::drivers::SQS;
 use crate::services;
 
 use anyhow::{anyhow, Result};
-use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::error::KafkaError;
-use rdkafka::message::OwnedMessage;
-use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::util::Timeout;
-use rocket::futures::TryStreamExt;
+use aws_sdk_sqs::Client;
 use rocket::tokio::{select, task, time};
 use rocket::Shutdown;
+use std::env;
 
 pub struct EventChannel {
-    _producer: FutureProducer,
+    _client: Client,
+    _queue: String,
+}
+
+async fn handler(message: String) -> Result<()> {
+    let owned_message = message.clone();
+    let process = task::spawn_blocking(|| async move {
+        let storage = services::storage::initialize().await?;
+        let result = services::image::generate(owned_message.as_str(), &storage).await;
+        result
+    });
+
+    if let Ok(handle) = process.await {
+        let res = handle.await;
+        match res {
+            Ok(_) => {
+                println!("Created variant for {}", message);
+                Ok(())
+            }
+            Err(error) => {
+                println!("{:?}", error);
+                Err(anyhow!("Could not process {}", message))
+            }
+        }
+    } else {
+        Err(anyhow!("Could not spawn task for {}", message))
+    }
 }
 
 impl EventChannel {
-    pub async fn send(&self, message: &str) -> Result<()> {
-        let topic = String::from("image-optimizer");
-        let key = "huffman";
+    pub async fn send_message(&self, message: &str) -> Result<()> {
+        let result = SQS::send_message(&self._client, &self._queue, message).await;
 
-        let record = FutureRecord::to(&topic).key(key).payload(message);
-        let response = self
-            ._producer
-            .send(record, Timeout::After(time::Duration::from_secs(0)));
-
-        match response.await {
-            Ok(delivery) => {
-                println!("Sent: {:?}", delivery);
-                Ok(())
-            }
-            Err((e, _)) => {
-                println!("Error: {:?}", e);
+        match result {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                println!("{:?}", error);
                 Err(anyhow!("Could not send message"))
             }
         }
     }
-}
 
-pub async fn create_channel() -> Result<EventChannel> {
-    let producer = kafka::create_producer().await;
+    pub async fn listen(&self, mut shutdown: Shutdown) {
+        let poll_interval = env::var("SQS_POLL_INTERVAL")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
 
-    Ok(EventChannel {
-        _producer: producer,
-    })
-}
-
-async fn process_event(owned_message: OwnedMessage) -> Result<(), KafkaError> {
-    match extract_payload(owned_message) {
-        Some(payload) => {
-            let task_result = task::spawn_blocking(|| async move {
-                println!("Received for processing: {}", payload);
-                let storage = services::storage::initialize().await.unwrap();
-                let result = services::image::generate(payload.as_str(), &storage).await;
-
-                result
-            })
-            .await;
-
-            match task_result {
-                Ok(_) => {}
-                Err(_) => {}
-            };
-
-            Ok(())
+        loop {
+            select! {
+                _ = time::sleep(time::Duration::from_secs(poll_interval)) =>
+                {
+                    println!("Polling for messages");
+                    let _ = SQS::receive_messages(&self._client, &self._queue, handler).await;
+                    ()
+                },
+                _ = &mut shutdown => {
+                    println!("Shutting down consumer");
+                    break;
+                },
+            }
         }
-        None => Ok(()),
     }
 }
 
-pub async fn consume_events(mut shutdown: Shutdown) {
-    let consumer: StreamConsumer = kafka::create_consumer().await;
-    let topic: String = String::from("image-optimizer");
+pub async fn initialize() -> Result<EventChannel> {
+    let _client = SQS::create_client().await;
+    let _queue = env::var("SQS_URL")?;
 
-    consumer
-        .subscribe(&[&topic])
-        .expect("Could not subscribe to topic: {:topic}");
-
-    let stream = consumer
-        .stream()
-        .try_for_each(|borrowed_message| process_event(borrowed_message.detach()));
-
-    println!("Listening to events for topic :{}", topic);
-
-    select! {
-        _ = stream =>
-            println!("Stream Failed"),
-        _ = &mut shutdown => {
-            println!("Consumer shutdown");
-        },
-    }
+    Ok(EventChannel { _client, _queue })
 }

@@ -39,3 +39,86 @@ pub fn extract_payload(message: OwnedMessage) -> Option<String> {
         None => None,
     }
 }
+
+// Backup of code from event service. TODO: If using figure out a better way to abstract kafka 
+// related handling into this driver
+
+pub async fn consume_events(mut shutdown: Shutdown) {
+    let consumer: StreamConsumer = kafka::create_consumer().await;
+    let topic: String = String::from("image-optimizer");
+
+    consumer
+        .subscribe(&[&topic])
+        .expect("Could not subscribe to topic: {:topic}");
+
+    let stream = consumer.stream().try_for_each(|borrowed_message| {
+        let owned_message = borrowed_message.detach();
+        match extract_payload(owned_message) {
+            Some(payload) => process_event(payload),
+            None => async { Ok(()) },
+        }
+    });
+
+    println!("Listening to events for topic :{}", topic);
+
+    select! {
+        _ = stream =>
+            println!("Stream Failed"),
+        _ = &mut shutdown => {
+            println!("Consumer shutdown");
+        },
+    }
+}
+
+pub struct EventChannel {
+    _producer: FutureProducer,
+}
+
+impl EventChannel {
+    pub async fn send(&self, message: &str) -> Result<()> {
+        let topic = String::from("image-optimizer");
+        let key = "huffman";
+
+        let record = FutureRecord::to(&topic).key(key).payload(message);
+        let response = self
+            ._producer
+            .send(record, Timeout::After(time::Duration::from_secs(0)));
+
+        match response.await {
+            Ok(delivery) => {
+                println!("Sent: {:?}", delivery);
+                Ok(())
+            }
+            Err((e, _)) => {
+                println!("Error: {:?}", e);
+                Err(anyhow!("Could not send message"))
+            }
+        }
+    }
+}
+
+pub async fn create_channel() -> Result<EventChannel> {
+    let producer = kafka::create_producer().await;
+
+    Ok(EventChannel {
+        _producer: producer,
+    })
+}
+
+async fn process_event(message: String) -> Result<()> {
+    let task_result = task::spawn_blocking(|| async move {
+        println!("Received for processing: {}", message);
+        let storage = services::storage::initialize().await.unwrap();
+        let result = services::image::generate(message.as_str(), &storage).await;
+
+        result
+    })
+    .await;
+
+    match task_result {
+        Ok(_) => {}
+        Err(_) => {}
+    };
+
+    Ok(())
+}
