@@ -13,4 +13,4 @@ aws-config = "0.15.0"
 aws-sdk-s3 = "0.15.0"
 aws-sdk-sqs = "0.15.0"
 anyhow = "1.0"
-# rdkafka = { version = "0.25", features = ["cmake-build"] }
+enum-map = "2.4.1"

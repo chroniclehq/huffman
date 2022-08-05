@@ -2,10 +2,23 @@ use crate::utils;
 
 use super::storage::{Storage, UploadData};
 use anyhow;
+use enum_map::{enum_map, Enum, EnumMap};
 use libvips::ops::webpsave_buffer_with_opts;
 use libvips::VipsImage;
 use libvips::{self, ops};
 use rocket::http::ContentType;
+
+#[derive(Enum)]
+pub enum Variants {
+    Default,
+}
+
+pub fn get_variant_path(variant: Variants) -> String {
+    let paths: EnumMap<Variants, &str> = enum_map! {
+        Variants::Default => "default"
+    };
+    paths[variant].to_string()
+}
 
 pub fn optimize(buffer: &Vec<u8>) -> libvips::Result<Vec<u8>> {
     let source = VipsImage::new_from_buffer(buffer, "").expect("Error during VipsImage init");
@@ -25,7 +38,8 @@ pub async fn generate(key: &str, storage: &Storage) -> anyhow::Result<()> {
     match result {
         Ok(optimised_image) => {
             let file_name_without_ext = utils::get_path_without_ext(key);
-            let target_key = format!("default/{}.webp", file_name_without_ext);
+            let variant_path = get_variant_path(Variants::Default);
+            let target_key = format!("{}/{}.webp", variant_path, file_name_without_ext);
 
             storage
                 .write(

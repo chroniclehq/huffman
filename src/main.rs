@@ -38,7 +38,10 @@ async fn fetch(
     match path {
         Some(key) => {
             let file_name_without_ext = utils::get_path_without_ext(key);
-            let target_path = format!("default/{}.webp", file_name_without_ext);
+            let variant_path =
+                services::image::get_variant_path(services::image::Variants::Default);
+
+            let target_path = format!("{}/{}.webp", variant_path, file_name_without_ext);
             let cached_image = storage.read_from_cache(&target_path).await;
 
             match cached_image {
