@@ -5,6 +5,8 @@ use crate::services;
 
 use self::message::Message;
 use anyhow::{anyhow, Result};
+use aws_sdk_s3::error::GetObjectError;
+use aws_sdk_s3::types::SdkError;
 use aws_sdk_sqs::Client;
 use rocket::tokio::{select, task, time};
 use rocket::Shutdown;
@@ -35,10 +37,16 @@ async fn handler(data: String) -> Result<()> {
                     println!("Created variant for {}", &message.url);
                     Ok(())
                 }
-                Err(error) => {
-                    println!("{:?}", error);
-                    Err(anyhow!("Could not process {}", &message.url))
-                }
+                Err(error) => match error.downcast_ref::<SdkError<GetObjectError>>() {
+                    Some(_) => {
+                        println!("Could not find source file");
+                        Ok(())
+                    }
+                    None => {
+                        println!("handler error {:?}", error);
+                        Err(anyhow!("Could not process {}", &message.url))
+                    }
+                },
             }
         } else {
             Err(anyhow!("Could not spawn task for {}", &message.url))

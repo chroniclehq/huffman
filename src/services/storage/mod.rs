@@ -1,7 +1,7 @@
 use crate::drivers::S3;
 pub use crate::drivers::S3::UploadData;
 use anyhow::{anyhow, Result};
-use aws_sdk_s3::Client;
+use aws_sdk_s3::{error::GetObjectError, types::SdkError, Client};
 use std::env;
 
 pub struct Storage {
@@ -11,14 +11,14 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub async fn read(&self, key: &str) -> Result<Vec<u8>> {
+    pub async fn read(&self, key: &str) -> Result<Vec<u8>, SdkError<GetObjectError>> {
         let result = S3::fetch_object(&self._client, &self._source, &key).await;
 
         match result {
             Ok(data) => Ok(data),
             Err(error) => {
                 println!("{:?}", error);
-                Err(anyhow!("Could not read object"))
+                Err(error)
             }
         }
     }
