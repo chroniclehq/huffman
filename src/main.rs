@@ -11,7 +11,7 @@ use rocket::fairing::AdHoc;
 use rocket::http::Status;
 use rocket::tokio::task;
 use rocket::State;
-use services::events::EventChannel;
+use services::events::{message::Message, EventChannel};
 use services::storage::Storage;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -65,8 +65,12 @@ async fn fetch(
                                 Ok(optimised_image) => {
                                     println!("Optimised {} at {:2?}", key, time.elapsed());
 
-                                    let resp = channel.send_message(key).await;
-                                    if let Ok(_) = resp {
+                                    if let Ok(_) = channel
+                                        .send_message(&Message {
+                                            url: key.to_string(),
+                                        })
+                                        .await
+                                    {
                                         println!(
                                             "Queued {} for caching at {:2?}",
                                             key,
@@ -91,31 +95,40 @@ async fn fetch(
             }
         }
         None => {
-            println!("Missing path");
+            println!("Missing path in fetch request");
             None
         }
     }
 }
 
 #[get("/generate/<file..>")]
-async fn generate(storage: &State<Storage>, file: PathBuf) -> Status {
+async fn generate(channel: &State<EventChannel>, file: PathBuf) -> Status {
     let path = file.as_os_str().to_str();
     match path {
-        // TODO @harris: Figure out a way to move this onto a blocking thread
-        Some(key) => match services::image::generate(key, &storage).await {
-            Ok(_) => Status::Ok,
-            Err(error) => {
-                println!("{}", error);
-                Status::InternalServerError
+        Some(key) => {
+            match channel
+                .send_message(&Message {
+                    url: key.to_string(),
+                })
+                .await
+            {
+                Ok(_) => Status::Ok,
+                Err(error) => {
+                    println!("{}", error);
+                    Status::InternalServerError
+                }
             }
-        },
-        None => Status::InternalServerError,
+        }
+        None => {
+            println!("Missing path in generate request");
+            Status::InternalServerError
+        }
     }
 }
 
 #[launch]
 async fn rocket() -> _ {
-    // Initialize env variables
+    // Load env variables
     dotenv().ok();
 
     // Initialize services
@@ -128,6 +141,9 @@ async fn rocket() -> _ {
         .manage(channel)
         .attach(utils::CORS)
         .attach(AdHoc::on_liftoff("start_consumer", |rocket| {
+            // Box::pin is required when spawning threads inside a fairing:
+            // https://github.com/SergioBenitez/Rocket/issues/1640
+            // https://github.com/SergioBenitez/Rocket/issues/1303
             Box::pin(async {
                 let shutdown = rocket.shutdown();
                 task::spawn(async {

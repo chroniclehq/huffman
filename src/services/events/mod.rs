@@ -1,6 +1,9 @@
+pub mod message;
+
 use crate::drivers::SQS;
 use crate::services;
 
+use self::message::Message;
 use anyhow::{anyhow, Result};
 use aws_sdk_sqs::Client;
 use rocket::tokio::{select, task, time};
@@ -12,41 +15,53 @@ pub struct EventChannel {
     _queue: String,
 }
 
-async fn handler(message: String) -> Result<()> {
-    let owned_message = message.clone();
-    let process = task::spawn_blocking(|| async move {
-        let storage = services::storage::initialize().await?;
-        let result = services::image::generate(owned_message.as_str(), &storage).await;
-        result
-    });
+async fn handler(data: String) -> Result<()> {
+    if let Some(message) = message::deserialize(data.as_str()) {
+        // Clone the message and spawn a blocking task to generate the variants.
+        // Cloning is necessary since value will be moved to make it thread safe.
+        let owned_message = message.clone();
+        let process = task::spawn_blocking(|| async move {
+            let storage = services::storage::initialize().await?;
+            let result = services::image::generate(&owned_message.url, &storage).await;
+            result
+        });
 
-    if let Ok(handle) = process.await {
-        let res = handle.await;
-        match res {
-            Ok(_) => {
-                println!("Created variant for {}", message);
-                Ok(())
+        // Tokio's task::spawn_blocking returns a task handle which must be awaited to start task
+        // which in turn returns a promise to the inner async scope.
+        if let Ok(handle) = process.await {
+            let res = handle.await;
+            match res {
+                Ok(_) => {
+                    println!("Created variant for {}", &message.url);
+                    Ok(())
+                }
+                Err(error) => {
+                    println!("{:?}", error);
+                    Err(anyhow!("Could not process {}", &message.url))
+                }
             }
-            Err(error) => {
-                println!("{:?}", error);
-                Err(anyhow!("Could not process {}", message))
-            }
+        } else {
+            Err(anyhow!("Could not spawn task for {}", &message.url))
         }
     } else {
-        Err(anyhow!("Could not spawn task for {}", message))
+        Err(anyhow!("Could not deserialize message: {}", data))
     }
 }
 
 impl EventChannel {
-    pub async fn send_message(&self, message: &str) -> Result<()> {
-        let result = SQS::send_message(&self._client, &self._queue, message).await;
+    pub async fn send_message(&self, message: &Message) -> Result<()> {
+        if let Some(data) = message::serialize(message) {
+            let result = SQS::send_message(&self._client, &self._queue, &data).await;
 
-        match result {
-            Ok(_) => Ok(()),
-            Err(error) => {
-                println!("{:?}", error);
-                Err(anyhow!("Could not send message"))
+            match result {
+                Ok(_) => Ok(()),
+                Err(error) => {
+                    println!("{:?}", error);
+                    Err(anyhow!("Could not send message"))
+                }
             }
+        } else {
+            Err(anyhow!("Could not serialize message"))
         }
     }
 
