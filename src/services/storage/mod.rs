@@ -17,7 +17,7 @@ impl Storage {
         match result {
             Ok(data) => Ok(data),
             Err(error) => {
-                println!("{:?}", error);
+                println!("Could not read object: {:?}", error);
                 Err(error)
             }
         }
@@ -28,7 +28,7 @@ impl Storage {
 
         match result {
             Ok(data) => Ok(data),
-            Err(_) => Err(anyhow!("Could not read object")),
+            Err(_) => Err(anyhow!("Could not read object from cache")),
         }
     }
 

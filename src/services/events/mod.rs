@@ -42,10 +42,7 @@ async fn handler(data: String) -> Result<()> {
                         println!("Could not find source file");
                         Ok(())
                     }
-                    None => {
-                        println!("handler error {:?}", error);
-                        Err(anyhow!("Could not process {}", &message.url))
-                    }
+                    None => Err(anyhow!("Could not process {}", &message.url)),
                 },
             }
         } else {
