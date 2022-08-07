@@ -1,0 +1,13 @@
+.vscode
+.git
+.github
+.gitignore
+
+target
+.DS_Store
+
+.env
+.env.*
+
+Dockerfile
+Dockerfile.*
