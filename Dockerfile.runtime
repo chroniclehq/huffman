@@ -63,4 +63,6 @@ WORKDIR /app
 COPY --from=builder /usr/local/cargo/bin/huffman /app/huffman
 COPY --from=builder /usr/src/huffman/Rocket.toml /app/Rocket.toml
 
+EXPOSE 8000
+
 CMD ["doppler", "run", "--", "/app/huffman"]
