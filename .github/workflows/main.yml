@@ -1,4 +1,4 @@
-name: build
+name: build-app
 
 on:
   push:
@@ -21,22 +21,12 @@ jobs:
           username: ${{ secrets.DEPLOY_ACTOR }}
           password: ${{ secrets.DEPLOY_TOKEN }}
 
-      - name: Docker Build
+      - name: Build image from Dockerfile.app
         uses: docker/build-push-action@v3
         with:
           context: .
-          file: Dockerfile.build
+          file: Dockerfile.app
           push: true
-          tags: ghcr.io/chroniclehq/huffman-build:0.1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Docker Runtime
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          file: Dockerfile.runtime
-          push: true
-          tags: ghcr.io/chroniclehq/huffman-runtime:0.1
+          tags: ghcr.io/chroniclehq/huffman-app:0.1
           cache-from: type=gha
           cache-to: type=gha,mode=max
