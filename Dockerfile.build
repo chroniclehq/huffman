@@ -2,12 +2,11 @@ FROM rust:1.62.1-alpine3.15
 
 ENV VIPS_VERSION=8.10.6
 
-# Install dependencies for building vips 
+# Install dependencies for building vips & huffman
 RUN apk add --update --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main \
     build-base \
     clang \
-    pkgconfig \
-    glib-dev
+    pkgconfig
 
 # Dev dependencies for building vips
 RUN apk add --update --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main --virtual .build-deps \
@@ -23,9 +22,10 @@ RUN apk add --update --no-cache --repository=http://dl-cdn.alpinelinux.org/alpin
     libwebp-dev \
     openssl-dev \
     orc-dev \
-    tiff-dev
+    tiff-dev \
+    glib-dev
 
-# Build vips and remove dev dependencies
+# Build vips
 RUN wget https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz && \
     mkdir /vips && \
     tar xvzf vips-${VIPS_VERSION}.tar.gz -C /vips --strip-components 1 && \
@@ -34,8 +34,7 @@ RUN wget https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/v
     make && \
     make install && \
     ldconfig /etc/ld.so.conf.d && \
-    rm -rf vips vips-${VIPS_VERSION}.tar.gz && \
-    apk del .build-deps
+    rm -rf vips vips-${VIPS_VERSION}.tar.gz
 
 # Install dependencies for vips to run
 RUN apk add --update --no-cache libgsf glib expat tiff libjpeg-turbo libexif giflib librsvg lcms2 libpng orc libwebp && \
