@@ -35,7 +35,12 @@ pub async fn receive_messages<R>(
 where
     R: Future<Output = anyhow::Result<()>>,
 {
-    let response = client.receive_message().queue_url(queue_url).send().await?;
+    let response = client
+        .receive_message()
+        .queue_url(queue_url)
+        .max_number_of_messages(10)
+        .send()
+        .await?;
 
     for borrowed_message in response.messages.unwrap_or_default() {
         let message = borrowed_message.to_owned();
