@@ -1,23 +1,16 @@
-# Build args to be passed in via docker build --
-ARG VERSION=0.1 
-ARG REGISTRY=ghcr.io/chroniclehq
-
-# Use build image as source for compiled rust binary
-FROM ${REGISTRY}/huffman-build:${VERSION} as builder
-
-# Use alpine directly to skip the Rust toolchain
-FROM alpine:3.15
+FROM rust:1.62.1-alpine3.15
 
 ENV VIPS_VERSION=8.10.6
 
 # Install dependencies for building vips 
 RUN apk add --update --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main \
+    build-base \
     clang \
-    pkgconfig
+    pkgconfig \
+    glib-dev
 
 # Dev dependencies for building vips
 RUN apk add --update --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main --virtual .build-deps \
-    build-base \
     expat-dev \
     giflib-dev \
     lcms2-dev \
@@ -30,8 +23,7 @@ RUN apk add --update --no-cache --repository=http://dl-cdn.alpinelinux.org/alpin
     libwebp-dev \
     openssl-dev \
     orc-dev \
-    tiff-dev \
-    glib-dev
+    tiff-dev
 
 # Build vips and remove dev dependencies
 RUN wget https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz && \
@@ -52,15 +44,9 @@ RUN apk add --update --no-cache libgsf glib expat tiff libjpeg-turbo libexif gif
     apk add --update --no-cache libimagequant --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main libde265=1.0.8-r2 && \
     export GI_TYPELIB_PATH=/usr/local/lib/girepository-1.0
 
-# Install Doppler CLI
-RUN wget -q -t3 'https://packages.doppler.com/public/cli/rsa.8004D9FF50437357.key' -O /etc/apk/keys/cli@doppler-8004D9FF50437357.rsa.pub && \
-    echo 'https://packages.doppler.com/public/cli/alpine/any-version/main' | tee -a /etc/apk/repositories && \
-    apk add doppler
+# Copy source files into image
+WORKDIR /usr/src/huffman
+COPY . .
 
-WORKDIR /app
-
-# Copy built files from build image
-COPY --from=builder /usr/local/cargo/bin/huffman /app/huffman
-COPY --from=builder /usr/src/huffman/Rocket.toml /app/Rocket.toml
-
-CMD ["doppler", "run", "--", "/app/huffman"]
+# Build app and run it
+RUN RUSTFLAGS="-C target-feature=-crt-static $(pkg-config --libs vips)" cargo install --path .

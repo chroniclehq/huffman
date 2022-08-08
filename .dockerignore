@@ -8,6 +8,11 @@ target
 
 .env
 .env.*
+_env
 
 Dockerfile
 Dockerfile.*
+.dockerignore
+
+docker-build.sh
+docker-deploy.sh
