@@ -59,13 +59,13 @@ pub async fn consume_events(mut shutdown: Shutdown) {
         }
     });
 
-    println!("Listening to events for topic :{}", topic);
+    log::info!("Listening to events for topic :{}", topic);
 
     select! {
         _ = stream =>
-            println!("Stream Failed"),
+            log::error!("Stream Failed"),
         _ = &mut shutdown => {
-            println!("Consumer shutdown");
+            log::error!("Consumer shutdown");
         },
     }
 }
@@ -86,11 +86,11 @@ impl EventChannel {
 
         match response.await {
             Ok(delivery) => {
-                println!("Sent: {:?}", delivery);
+                log::info!("Sent: {:?}", delivery);
                 Ok(())
             }
             Err((e, _)) => {
-                println!("Error: {:?}", e);
+                log::error!("Error: {:?}", e);
                 Err(anyhow!("Could not send message"))
             }
         }
@@ -107,7 +107,7 @@ pub async fn create_channel() -> Result<EventChannel> {
 
 async fn process_event(message: String) -> Result<()> {
     let task_result = task::spawn_blocking(|| async move {
-        println!("Received for processing: {}", message);
+        log::info!("Received for processing: {}", message);
         let storage = services::storage::initialize().await.unwrap();
         let result = services::image::generate(message.as_str(), &storage).await;
 

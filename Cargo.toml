@@ -16,3 +16,5 @@ anyhow = "1.0"
 enum-map = "2.4.1"
 serde = "1.0.142"
 serde_json = "1.0.83"
+datadog-logs = { version = "0.2.1", features = ["nonblocking", "with-tokio"] }
+log = "0.4"

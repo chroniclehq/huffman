@@ -41,7 +41,7 @@ pub async fn generate(key: &str, storage: &Storage) -> anyhow::Result<()> {
 
     match cached_image {
         Ok(_) => {
-            println!("Variant found for {}. Skipping generate flow.", key);
+            log::info!("Variant found for {}. Skipping generate flow.", key);
             Ok(())
         }
         Err(_error) => {

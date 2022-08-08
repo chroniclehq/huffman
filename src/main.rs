@@ -18,7 +18,7 @@ use std::time::Instant;
 
 #[get("/ping")]
 fn ping() -> &'static str {
-    println!("Received ping");
+    log::info!("Received ping");
     "pong!"
 }
 
@@ -46,7 +46,7 @@ async fn fetch(
 
             match cached_image {
                 Ok(image) => {
-                    println!(
+                    log::info!(
                         "Variant found for {} at {:2?}. Returning from cache",
                         key,
                         time.elapsed()
@@ -63,7 +63,7 @@ async fn fetch(
 
                             match result {
                                 Ok(optimised_image) => {
-                                    println!("Optimised {} at {:2?}", key, time.elapsed());
+                                    log::info!("Optimised {} at {:2?}", key, time.elapsed());
 
                                     if let Ok(_) = channel
                                         .send_message(&Message {
@@ -71,7 +71,7 @@ async fn fetch(
                                         })
                                         .await
                                     {
-                                        println!(
+                                        log::info!(
                                             "Queued {} for caching at {:2?}",
                                             key,
                                             time.elapsed()
@@ -81,13 +81,13 @@ async fn fetch(
                                     Some(ImageResponse(optimised_image))
                                 }
                                 Err(error) => {
-                                    println!("Error during optimization {}", error);
+                                    log::error!("Error during optimization {}", error);
                                     Some(ImageResponse(original_image))
                                 }
                             }
                         }
                         Err(error) => {
-                            println!("Could not find image {}", error);
+                            log::error!("Could not find image {}", error);
                             None
                         }
                     }
@@ -95,7 +95,7 @@ async fn fetch(
             }
         }
         None => {
-            println!("Missing path in fetch request");
+            log::warn!("Missing path in fetch request");
             None
         }
     }
@@ -114,13 +114,13 @@ async fn generate(channel: &State<EventChannel>, file: PathBuf) -> Status {
             {
                 Ok(_) => Status::Ok,
                 Err(error) => {
-                    println!("{}", error);
+                    log::error!("{}", error);
                     Status::InternalServerError
                 }
             }
         }
         None => {
-            println!("Missing path in generate request");
+            log::warn!("Missing path in generate request");
             Status::InternalServerError
         }
     }
@@ -134,6 +134,8 @@ async fn rocket() -> _ {
     // Initialize services
     let storage: Storage = services::storage::initialize().await.unwrap();
     let channel: EventChannel = services::events::initialize().await.unwrap();
+
+    let _logger = services::logger::initialize().await;
 
     // Start server
     rocket::build()

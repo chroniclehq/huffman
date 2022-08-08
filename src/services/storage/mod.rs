@@ -17,7 +17,7 @@ impl Storage {
         match result {
             Ok(data) => Ok(data),
             Err(error) => {
-                println!("Could not read object: {:?}", error);
+                log::error!("Could not read object: {:?}", error);
                 Err(error)
             }
         }
@@ -37,7 +37,7 @@ impl Storage {
         match result {
             Ok(()) => Ok(()),
             Err(error) => {
-                println!("{:?}", error);
+                log::error!("{:?}", error);
                 Err(anyhow!("Could not write object"))
             }
         }

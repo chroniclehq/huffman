@@ -34,12 +34,12 @@ async fn handler(data: String) -> Result<()> {
             let res = handle.await;
             match res {
                 Ok(_) => {
-                    println!("Created variant for {}", &message.url);
+                    log::info!("Created variant for {}", &message.url);
                     Ok(())
                 }
                 Err(error) => match error.downcast_ref::<SdkError<GetObjectError>>() {
                     Some(_) => {
-                        println!("Could not find source file");
+                        log::error!("Could not find source file");
                         Ok(())
                     }
                     None => Err(anyhow!("Could not process {}", &message.url)),
@@ -61,7 +61,7 @@ impl EventChannel {
             match result {
                 Ok(_) => Ok(()),
                 Err(error) => {
-                    println!("{:?}", error);
+                    log::error!("{:?}", error);
                     Err(anyhow!("Could not send message"))
                 }
             }
@@ -80,12 +80,12 @@ impl EventChannel {
             select! {
                 _ = time::sleep(time::Duration::from_secs(poll_interval)) =>
                 {
-                    println!("Polling for messages");
+                    log::info!("Polling for messages");
                     let _ = SQS::receive_messages(&self._client, &self._queue, handler).await;
                     ()
                 },
                 _ = &mut shutdown => {
-                    println!("Shutting down consumer");
+                    log::error!("Shutting down consumer");
                     break;
                 },
             }

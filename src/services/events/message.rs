@@ -11,7 +11,7 @@ pub fn deserialize(data: &str) -> Option<Message> {
     match result {
         Ok(message) => Some(message),
         Err(error) => {
-            println!("{:?}", error);
+            log::error!("{:?}", error);
             None
         }
     }
@@ -22,7 +22,7 @@ pub fn serialize(message: &Message) -> Option<String> {
     match result {
         Ok(data) => Some(data),
         Err(error) => {
-            println!("{:?}", error);
+            log::error!("{:?}", error);
             None
         }
     }

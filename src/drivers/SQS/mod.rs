@@ -41,7 +41,7 @@ where
         let message = borrowed_message.to_owned();
 
         if let Some(msg) = borrowed_message.body() {
-            println!("Received message: {:#?}", msg);
+            log::info!("Received message: {:#?}", msg);
             let res = handler(msg.to_string()).await;
             match res {
                 Ok(_) => {
@@ -54,13 +54,13 @@ where
                             .await;
 
                         if let Err(error) = delete_res {
-                            println!("{:?}", error);
+                            log::error!("{:?}", error);
                         }
                     }
 
                     return Ok(());
                 }
-                Err(error) => println!("{:?}", error),
+                Err(error) => log::error!("{:?}", error),
             }
         }
     }
