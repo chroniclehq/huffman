@@ -4,9 +4,9 @@ use log::*;
 use std::env;
 
 pub async fn initialize() -> Result<()> {
-    let is_production = env::var("PRODUCTION").is_ok();
+    let enable_data_dog = env::var("DATADOG_API_KEY").is_ok();
 
-    if !is_production {
+    if !enable_data_dog {
         return Ok(());
     }
 
