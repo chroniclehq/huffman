@@ -14,5 +14,6 @@ Dockerfile
 Dockerfile.*
 .dockerignore
 
-docker-build.sh
-docker-deploy.sh
+build.sh
+
+*.md

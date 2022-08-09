@@ -80,7 +80,7 @@ jobs:
 
   build-app:
     needs: [build-builder, build-runtime]
-    if: ${{ !failure() }}
+    if: ${{ !failure() }} # Check if the previous stages were successfull or skipped
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
