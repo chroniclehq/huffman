@@ -35,69 +35,92 @@ async fn fetch(
     match path {
         Some(key) => {
             let file_name_without_ext = utils::get_path_without_ext(key);
-            let variant_path =
-                services::image::get_variant_path(services::image::Variants::Default);
+            let ext = utils::get_ext_from_path(key).unwrap_or_else(|| "png");
+            let is_allowed = utils::is_allowed_type(ext);
 
-            let target_path = format!("{}/{}.webp", variant_path, file_name_without_ext);
-            let cached_image = storage.read_from_cache(&target_path).await;
+            match is_allowed {
+                Ok(_) => {
+                    let variant_path =
+                        services::image::get_variant_path(services::image::Variants::Default);
+                    let target_path = format!("{}/{}.webp", variant_path, file_name_without_ext);
+                    let cached_image = storage.read_from_cache(&target_path).await;
+                    match cached_image {
+                        Ok(image) => {
+                            log::info!(
+                                "Variant found for {} at {:2?}. Returning from cache",
+                                key,
+                                time.elapsed()
+                            );
+                            Some(ImageResponse::new(
+                                image,
+                                ContentType::WEBP,
+                                CacheControl::Default,
+                            ))
+                        }
+                        Err(_error) => {
+                            let original_image = storage.read(key).await;
 
-            match cached_image {
-                Ok(image) => {
-                    log::info!(
-                        "Variant found for {} at {:2?}. Returning from cache",
-                        key,
-                        time.elapsed()
-                    );
-                    Some(ImageResponse::new(
-                        image,
-                        ContentType::WEBP,
-                        CacheControl::Default,
-                    ))
-                }
-                Err(_error) => {
-                    let original_image = storage.read(key).await;
+                            match original_image {
+                                Ok(original_image) => {
+                                    let result: Result<Vec<u8>, libvips::error::Error> =
+                                        services::image::optimize(&original_image);
 
-                    match original_image {
-                        Ok(original_image) => {
-                            let result: Result<Vec<u8>, libvips::error::Error> =
-                                services::image::optimize(&original_image);
+                                    match result {
+                                        Ok(optimised_image) => {
+                                            log::info!(
+                                                "Optimised {} at {:2?}",
+                                                key,
+                                                time.elapsed()
+                                            );
 
-                            match result {
-                                Ok(optimised_image) => {
-                                    log::info!("Optimised {} at {:2?}", key, time.elapsed());
+                                            if let Ok(_) = channel
+                                                .send_message(&Message {
+                                                    url: key.to_string(),
+                                                })
+                                                .await
+                                            {
+                                                log::info!(
+                                                    "Queued {} for caching at {:2?}",
+                                                    key,
+                                                    time.elapsed()
+                                                );
+                                            }
 
-                                    if let Ok(_) = channel
-                                        .send_message(&Message {
-                                            url: key.to_string(),
-                                        })
-                                        .await
-                                    {
-                                        log::info!(
-                                            "Queued {} for caching at {:2?}",
-                                            key,
-                                            time.elapsed()
-                                        );
+                                            Some(ImageResponse::new(
+                                                optimised_image,
+                                                ContentType::WEBP,
+                                                CacheControl::Default,
+                                            ))
+                                        }
+                                        Err(error) => {
+                                            log::error!("Error during optimization {}", error);
+
+                                            Some(ImageResponse::new(
+                                                original_image,
+                                                ContentType::from_extension(ext)
+                                                    .unwrap_or_default(),
+                                                CacheControl::NoCache,
+                                            ))
+                                        }
                                     }
-
-                                    Some(ImageResponse::new(
-                                        optimised_image,
-                                        ContentType::WEBP,
-                                        CacheControl::Default,
-                                    ))
                                 }
                                 Err(error) => {
-                                    log::error!("Error during optimization {}", error);
-                                    let ext =
-                                        utils::get_ext_from_path(key).unwrap_or_else(|| "png");
-
-                                    Some(ImageResponse::new(
-                                        original_image,
-                                        ContentType::from_extension(ext).unwrap_or_default(),
-                                        CacheControl::NoCache,
-                                    ))
+                                    log::warn!("Could not find image {}", error);
+                                    None
                                 }
                             }
                         }
+                    }
+                }
+                Err(error) => {
+                    log::warn!("{}", error);
+                    let original_image = storage.read(key).await;
+                    match original_image {
+                        Ok(original_image) => Some(ImageResponse::new(
+                            original_image,
+                            ContentType::from_extension(ext).unwrap_or_default(),
+                            CacheControl::Default,
+                        )),
                         Err(error) => {
                             log::warn!("Could not find image {}", error);
                             None
