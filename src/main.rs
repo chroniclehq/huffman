@@ -15,11 +15,12 @@ use services::events::{message::Message, EventChannel};
 use services::storage::Storage;
 use std::path::PathBuf;
 use std::time::Instant;
+use utils::http::{CacheControl, ImageResponse, TextResponse, CORS};
 
 #[get("/ping")]
-fn ping() -> &'static str {
+fn ping() -> TextResponse {
     log::info!("Received ping");
-    "pong"
+    TextResponse::new("pong")
 }
 
 #[get("/<file..>")]
@@ -27,7 +28,7 @@ async fn fetch(
     storage: &State<Storage>,
     channel: &State<EventChannel>,
     file: PathBuf,
-) -> Option<utils::ImageResponse> {
+) -> Option<ImageResponse> {
     let path = file.as_os_str().to_str();
     let time = Instant::now();
 
@@ -47,10 +48,11 @@ async fn fetch(
                         key,
                         time.elapsed()
                     );
-                    Some(utils::ImageResponse {
-                        inner: image,
-                        header: ContentType::WEBP,
-                    })
+                    Some(ImageResponse::new(
+                        image,
+                        ContentType::WEBP,
+                        CacheControl::Default,
+                    ))
                 }
                 Err(_error) => {
                     let original_image = storage.read(key).await;
@@ -77,26 +79,27 @@ async fn fetch(
                                         );
                                     }
 
-                                    Some(utils::ImageResponse {
-                                        inner: optimised_image,
-                                        header: ContentType::WEBP,
-                                    })
+                                    Some(ImageResponse::new(
+                                        optimised_image,
+                                        ContentType::WEBP,
+                                        CacheControl::Default,
+                                    ))
                                 }
                                 Err(error) => {
                                     log::error!("Error during optimization {}", error);
                                     let ext =
                                         utils::get_ext_from_path(key).unwrap_or_else(|| "png");
 
-                                    Some(utils::ImageResponse {
-                                        inner: original_image,
-                                        header: ContentType::from_extension(ext)
-                                            .unwrap_or_default(),
-                                    })
+                                    Some(ImageResponse::new(
+                                        original_image,
+                                        ContentType::from_extension(ext).unwrap_or_default(),
+                                        CacheControl::NoCache,
+                                    ))
                                 }
                             }
                         }
                         Err(error) => {
-                            log::error!("Could not find image {}", error);
+                            log::warn!("Could not find image {}", error);
                             None
                         }
                     }
@@ -150,7 +153,7 @@ async fn rocket() -> _ {
     rocket::build()
         .manage(storage)
         .manage(channel)
-        .attach(utils::CORS)
+        .attach(CORS)
         .attach(AdHoc::on_liftoff("start_consumer", |rocket| {
             // Box::pin is required when spawning threads inside a fairing:
             // https://github.com/SergioBenitez/Rocket/issues/1640
