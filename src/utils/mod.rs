@@ -1,4 +1,5 @@
 use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::ContentType;
 use rocket::http::Header;
 use rocket::{Request, Response};
 
@@ -21,9 +22,22 @@ impl Fairing for CORS {
     }
 }
 
+#[derive(Responder)]
+pub struct ImageResponse {
+    pub inner: Vec<u8>,
+    pub header: ContentType,
+}
+
 pub fn get_path_without_ext(path: &str) -> &str {
     match path.rsplit_once('.') {
         Some((new_path, _)) => new_path,
         None => path,
+    }
+}
+
+pub fn get_ext_from_path(path: &str) -> Option<&str> {
+    match path.rsplit_once('.') {
+        Some((_, ext)) => Some(ext),
+        None => None,
     }
 }

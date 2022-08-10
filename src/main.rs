@@ -8,7 +8,7 @@ mod utils;
 
 use dotenv::dotenv;
 use rocket::fairing::AdHoc;
-use rocket::http::Status;
+use rocket::http::{ContentType, Status};
 use rocket::tokio::task;
 use rocket::State;
 use services::events::{message::Message, EventChannel};
@@ -19,19 +19,15 @@ use std::time::Instant;
 #[get("/ping")]
 fn ping() -> &'static str {
     log::info!("Received ping");
-    "pong!"
+    "pong"
 }
-
-#[derive(Responder)]
-#[response(content_type = "image/webp")]
-struct ImageResponse(Vec<u8>);
 
 #[get("/<file..>")]
 async fn fetch(
     storage: &State<Storage>,
     channel: &State<EventChannel>,
     file: PathBuf,
-) -> Option<ImageResponse> {
+) -> Option<utils::ImageResponse> {
     let path = file.as_os_str().to_str();
     let time = Instant::now();
 
@@ -51,7 +47,10 @@ async fn fetch(
                         key,
                         time.elapsed()
                     );
-                    Some(ImageResponse(image))
+                    Some(utils::ImageResponse {
+                        inner: image,
+                        header: ContentType::WEBP,
+                    })
                 }
                 Err(_error) => {
                     let original_image = storage.read(key).await;
@@ -78,11 +77,21 @@ async fn fetch(
                                         );
                                     }
 
-                                    Some(ImageResponse(optimised_image))
+                                    Some(utils::ImageResponse {
+                                        inner: optimised_image,
+                                        header: ContentType::WEBP,
+                                    })
                                 }
                                 Err(error) => {
                                     log::error!("Error during optimization {}", error);
-                                    Some(ImageResponse(original_image))
+                                    let ext =
+                                        utils::get_ext_from_path(key).unwrap_or_else(|| "png");
+
+                                    Some(utils::ImageResponse {
+                                        inner: original_image,
+                                        header: ContentType::from_extension(ext)
+                                            .unwrap_or_default(),
+                                    })
                                 }
                             }
                         }
