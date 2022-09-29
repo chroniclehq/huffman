@@ -1,9 +1,8 @@
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::ContentType;
 use rocket::http::Header;
-use rocket::response::{self, Responder, Response};
+use rocket::response::{Responder, Response};
 use rocket::Request;
-use std::io::Cursor;
 
 // Fairing for setting CORS Headers
 pub struct CORS;
@@ -41,27 +40,19 @@ impl<'h> Into<Header<'h>> for CacheControl {
 }
 
 // Responder for images along with content-type and cache-control header arguments
+#[derive(Responder)]
 pub struct ImageResponse {
-    pub data: Vec<u8>,
+    pub inner: Vec<u8>,
     pub content_type: ContentType,
     pub cache: CacheControl,
 }
 impl ImageResponse {
-    pub fn new(data: Vec<u8>, content_type: ContentType, cache: CacheControl) -> Self {
+    pub fn new(value: Vec<u8>, content_type: ContentType, cache: CacheControl) -> Self {
         ImageResponse {
-            data,
+            inner: value,
             content_type,
             cache,
         }
-    }
-}
-impl<'r> Responder<'r, 'static> for ImageResponse {
-    fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
-        Response::build()
-            .header(self.content_type)
-            .header(self.cache)
-            .sized_body(self.data.len(), Cursor::new(self.data))
-            .ok()
     }
 }
 

@@ -44,6 +44,7 @@ async fn fetch(
                         services::image::get_variant_path(services::image::Variants::Default);
                     let target_path = format!("{}/{}.webp", variant_path, file_name_without_ext);
                     let cached_image = storage.read_from_cache(&target_path).await;
+
                     match cached_image {
                         Ok(image) => {
                             log::info!(
